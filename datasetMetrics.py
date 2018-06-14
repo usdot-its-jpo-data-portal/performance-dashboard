@@ -22,7 +22,7 @@ except ImportError:
     flags = None
 
 '''
-This code access the Socrata API to select dataset downloads, views, API downloads
+This code accesses the Socrata API to select dataset downloads, views, API downloads
 and API views for ITS JPO datasets on data.transportation.gov, then appends that
 data to a Postgres database and writes monthly numbers to a Google Sheets object
 through the Google Drive API. 
@@ -33,13 +33,14 @@ dataset_name,views_by_month,monthly_downloads,api_access,api_downloads,downloads
 Code is currently set up to work with ipdh_metrics.dtg_metrics
 - Google Sheets object with column headers: dataset_name,views_by_month,monthly_downloads,api_access,api_downloads
 - client_secret.json, follow Google Drive API instructions for acquiring client_secret.json.
+- application name for Google API approval 
 - data.transportation.gov account with Discovery API access.
 - soda.yml file including data.transporation.gov username and password.
 '''
 
 SCOPES = 'https://www.googleapis.com/auth/spreadsheets'
 CLIENT_SECRET_FILE = 'client_secret.json'
-APPLICATION_NAME = 'Google Sheets API Python Quickstart'
+APPLICATION_NAME = 'APPLICATION_NAME'
 
 def get_credentials():
     """Gets valid user credentials from storage.
@@ -113,7 +114,7 @@ credentials = get_credentials()
 http = credentials.authorize(httplib2.Http())
 service = discovery.build('sheets', 'v4', credentials=credentials)
 #Enter spreadsheet id from Google Sheets object
-#spreadsheet_id = ""
+spreadsheet_id = ""
 spreadsheetRange = "A2:E" + str(len(r['results']) + 1)
 value_input_option = 'USER_ENTERED'
 request = service.spreadsheets().values().update(spreadsheetId=spreadsheet_id, range=spreadsheetRange, valueInputOption=value_input_option, body=value_range_body)

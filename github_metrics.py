@@ -29,12 +29,13 @@ id autoincrement,repository,datetime,count,uniques
 Code is currently set up to work with ipdh_metrics.github_metrics
 - Google Sheets object with column headers: repository,datetime,count,uniques
 - client_secret.json, follow Google Drive API instructions for acquiring client_secret.json.
+- application name for Google API approval 
 - GitHub account.
 '''
 
 SCOPES = 'https://www.googleapis.com/auth/spreadsheets'
 CLIENT_SECRET_FILE = 'client_secret.json'
-APPLICATION_NAME = 'Google Sheets API Python Quickstart'
+APPLICATION_NAME = 'APPLICATION_NAME'
 
 def get_credentials():
     """Gets valid user credentials from storage.
