@@ -106,6 +106,12 @@ for dataset in r['results']:
     api_access, api_downloads = getDatasetMetrics(dataset["resource"]["id"])
     cur.execute("INSERT INTO ipdh_metrics.dtg_metrics VALUES (%s,%s,%s,%s,%s,%s,%s)",(dataset_name,views_by_month,monthly_downloads,api_access,api_downloads,downloads,end_date))
     value_range_body['values'].append([dataset_name,views_by_month,monthly_downloads,api_access,api_downloads])
+cur.execute("SELECT count(dataset_name) FROM ipdh_metrics.dtg_metrics WHERE datetime = %s",[end_date])
+numdatasets = cur.fetchone()[0]
+cur.execute("SELECT count(dataset_name) FROM ipdh_metrics.dtg_metrics WHERE datetime = %s",[end_date - datetime.timedelta(days=1)])
+prevnumdatasets = cur.fetchone()[0]
+if numdatasets != prevnumdatasets:
+    print("ALERT!! Number of DTG datasets has changed. Previously there were {0} datasets, there are now {1}.\n\n".format(prevnumdatasets,numdatasets))
 conn.commit()
 cur.close()
 conn.close()
