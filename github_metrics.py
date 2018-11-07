@@ -68,14 +68,18 @@ def get_credentials():
 def make_request(repository, username, password, cur):
     r = requests.get("https://api.github.com/repos/usdot-its-jpo-data-portal/{}/traffic/views".format(repository), auth=HTTPBasicAuth(username,password))
     r = r.json()
-    today = datetime.datetime.combine(datetime.date.today(),datetime.time(tzinfo=datetime.timezone(datetime.timedelta(0)))) - datetime.timedelta(days=1) + datetime.timedelta(hours=5)
+    today = datetime.date.today() - datetime.timedelta(days=1)
+    notoday = True
     for row in r["views"]:
         timestamp = row["timestamp"]
-        timestamp = datetime.datetime.strptime(timestamp,"%Y-%m-%dT%H:%M:%SZ").astimezone(datetime.timezone(datetime.timedelta(0)))
+        timestamp = datetime.datetime.strptime(timestamp,"%Y-%m-%dT%H:%M:%SZ").date()
         if timestamp == today:
+            notoday = False
             count = row["count"]
             unqiues = row["uniques"]
             cur.execute("INSERT INTO ipdh_metrics.github_metrics (repository,datetime,count,uniques) VALUES (%s,%s,%s,%s)", (repository,timestamp,count,unqiues))
+    if notoday:
+        cur.execute("INSERT INTO ipdh_metrics.github_metrics (repository,datetime,count,uniques) VALUES (%s,%s,0,0)", (repository,today))
 
 def get_monthly(repository,cur,service):
     today = datetime.datetime.combine(datetime.date.today(),datetime.time(tzinfo=datetime.timezone(datetime.timedelta(0))))
