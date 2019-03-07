@@ -6,11 +6,15 @@ import os
 import time
 import datetime
 
+import yaml
+
 from apiclient.http import MediaFileUpload
 from apiclient import discovery
 from oauth2client import client
 from oauth2client import tools
 from oauth2client.file import Storage
+
+from sesemail import sendEmail
 
 try:
     import argparse
@@ -22,7 +26,6 @@ except ImportError:
 This code access the GitHub API to select the traffic and views, then appends that 
 data to a Postgres database and writes monthly numbers to a Google Sheets object
 through the Google Drive API. 
-
 Requires:
 - Postgres database with table github_metrics and columns
 id autoincrement,repository,datetime,count,uniques
@@ -35,14 +38,12 @@ Code is currently set up to work with ipdh_metrics.github_metrics
 
 SCOPES = 'https://www.googleapis.com/auth/spreadsheets'
 CLIENT_SECRET_FILE = 'client_secret.json'
-APPLICATION_NAME = 'APPLICATION_NAME'
+APPLICATION_NAME = 'its-jpo-metrics'
 
 def get_credentials():
     """Gets valid user credentials from storage.
-
     If nothing has been stored, or if the stored credentials are invalid,
     the OAuth2 flow is completed to obtain the new credentials.
-
     Returns:
         Credentials, the obtained credential.
     """
@@ -83,7 +84,7 @@ def make_request(repository, username, password, cur):
 
 def get_monthly(repository,cur,service):
     today = datetime.datetime.combine(datetime.date.today(),datetime.time(tzinfo=datetime.timezone(datetime.timedelta(0))))
-    last_month = today - datetime.timedelta(days=29)
+    last_month = today - datetime.timedelta(days=28)
     cur.execute("SELECT repository,datetime,count,uniques FROM ipdh_metrics.github_metrics WHERE repository = %s AND datetime >= %s",(repository,last_month))
     results = cur.fetchall()
     for record in results:
@@ -94,28 +95,35 @@ def get_monthly(repository,cur,service):
         row.append(record[3])
         value_range_body['values'].append(row)
 
-#Set username and password for GitHub account
-#username = 
-#password = 
-#Add parameters to connect to specific Postgres database
-#conn = psycopg2.connect("")
-cur = conn.cursor()
-cur.execute("SET TIME ZONE 'UTC'")
-make_request("sandbox", username, password, cur)
-make_request("microsite", username, password, cur)
-conn.commit()
-credentials = get_credentials()
-http = credentials.authorize(httplib2.Http())
-service = discovery.build('sheets', 'v4', credentials=credentials)
-value_range_body = {'values':[]}
-get_monthly("sandbox", cur, service)
-get_monthly("microsite", cur, service)
-cur.close()
-conn.close()
-#Enter spreadsheet id from Google Sheets object
-#spreadsheet_id = ""
-spreadsheetRange = "A2:E57"
-value_input_option = 'USER_ENTERED'
-request = service.spreadsheets().values().update(spreadsheetId=spreadsheet_id, range=spreadsheetRange, valueInputOption=value_input_option, body=value_range_body)
-response = request.execute()
-print(response)
+try:
+
+    with open("config.yml", 'r') as stream:
+        config = yaml.load(stream)
+
+    #Set username and password for GitHub account
+    username = config["github_username"]
+    password = config["github_password"]
+    conn = psycopg2.connect(config["pg_connection_string"])
+    cur = conn.cursor()
+    cur.execute("SET TIME ZONE 'UTC'")
+    make_request("sandbox", username, password, cur)
+    make_request("microsite", username, password, cur)
+    conn.commit()
+    credentials = get_credentials()
+    http = credentials.authorize(httplib2.Http())
+    service = discovery.build('sheets', 'v4', credentials=credentials)
+    value_range_body = {'values':[]}
+    get_monthly("sandbox", cur, service)
+    get_monthly("microsite", cur, service)
+    cur.close()
+    conn.close()
+    #Enter spreadsheet id from Google Sheets object
+    spreadsheet_id = config["spreadsheet_id_github"]
+    spreadsheetRange = "A2:E57"
+    value_input_option = 'USER_ENTERED'
+    request = service.spreadsheets().values().update(spreadsheetId=spreadsheet_id, range=spreadsheetRange, valueInputOption=value_input_option, body=value_range_body)
+    response = request.execute()
+    print(response)
+
+except Exception as e:
+    sendEmail("Github", str(e))

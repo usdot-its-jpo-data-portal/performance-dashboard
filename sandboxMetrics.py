@@ -12,6 +12,8 @@ from oauth2client import client
 from oauth2client import tools
 from oauth2client.file import Storage
 
+from sesemail import sendEmail
+
 pageviews = 0
 wydot_bsm_downloads = 0
 wydot_tim_downloads = 0
@@ -48,7 +50,7 @@ Code is currently set up to work with ipdh_metrics.sandbox_metrics
 
 SCOPES = 'https://www.googleapis.com/auth/spreadsheets'
 CLIENT_SECRET_FILE = 'client_secret.json'
-APPLICATION_NAME = 'APPLICATION_NAME'
+APPLICATION_NAME = 'its-jpo-metrics'
 
 def get_credentials():
     """Gets valid user credentials from storage.
@@ -85,7 +87,7 @@ def process_lines(log):
     '''
     global pageviews,wydot_bsm_downloads,wydot_tim_downloads,tampa_bsm_downloads,tampa_spat_downloads,nyc_bsm_downloads,nyc_spat_downloads,nyc_map_downloads
     for line in log:
-        if "REST.GET.OBJECT" in line:
+        if " REST.GET.OBJECT " in line:
             row = line.split(" ")
             item = row[row.index("REST.GET.OBJECT") + 1]
             if item == "index.html":
@@ -130,36 +132,43 @@ def get_monthly(cur, today):
         value_range_body['values'].append(row)
     return value_range_body
 
-session = boto3.session.Session()
-s3 = session.resource('s3')
-#Add s3 bucket name that contains server access log files
-mybucket = s3.Bucket('')
+try:
+    with open("config.yml", 'r') as stream:
+        config = yaml.load(stream)
 
-today = datetime.datetime.combine(datetime.date.today(),datetime.time(tzinfo=datetime.timezone(datetime.timedelta(0))))
-yesterday = today - datetime.timedelta(hours=24)
-for record in mybucket.objects.filter(Prefix="logs/"):
+    session = boto3.session.Session()
+    s3 = session.resource('s3')
+    #Add s3 bucket name that contains server access log files
+    mybucket = s3.Bucket('usdot-its-cvpilot-public-data-logs')
+
+    today = datetime.datetime.combine(datetime.date.today(),datetime.time(tzinfo=datetime.timezone(datetime.timedelta(0))))
+    yesterday = today - datetime.timedelta(hours=24)
+    for record in mybucket.objects.filter(Prefix="logs/"):
         if record.last_modified > yesterday and record.last_modified <= today:
             log = record.get()['Body'].read().decode('utf-8')
             log = log.splitlines()
             process_lines(log)
 
-#Add parameters to connect to specific Postgres database
-conn = psycopg2.connect("")
-cur = conn.cursor()
-cur.execute("SET TIME ZONE 'UTC'")
-cur.execute("INSERT INTO ipdh_metrics.sandbox_metrics (datetime,pageviews,wydot_bsm_downloads,wydot_tim_downloads,tampa_bsm_downloads,tampa_spat_downloads,nyc_bsm_downloads,nyc_spat_downloads,nyc_map_downloads) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",(today,pageviews,wydot_bsm_downloads,wydot_tim_downloads,tampa_bsm_downloads,tampa_spat_downloads,nyc_bsm_downloads,nyc_spat_downloads,nyc_map_downloads))
-value_range_body = get_monthly(cur, today)
-conn.commit()
-cur.close()
-conn.close()
- 
-credentials = get_credentials()
-http = credentials.authorize(httplib2.Http())
-service = discovery.build('sheets', 'v4', credentials=credentials)
-#Enter spreadsheet id from Google Sheets object
-spreadsheet_id = ""
-spreadsheetRange = "A2:I" + str(len(value_range_body['values']) + 1)
-value_input_option = 'USER_ENTERED'
-request = service.spreadsheets().values().update(spreadsheetId=spreadsheet_id, range=spreadsheetRange, valueInputOption=value_input_option, body=value_range_body)
-response = request.execute()
-print(response)
+    #Add parameters to connect to specific Postgres database
+    conn = psycopg2.connect(config["pg_connection_string"])
+    cur = conn.cursor()
+    cur.execute("SET TIME ZONE 'UTC'")
+    cur.execute("INSERT INTO ipdh_metrics.sandbox_metrics (datetime,pageviews,wydot_bsm_downloads,wydot_tim_downloads,tampa_bsm_downloads,tampa_spat_downloads,nyc_bsm_downloads,nyc_spat_downloads,nyc_map_downloads) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",(today,pageviews,wydot_bsm_downloads,wydot_tim_downloads,tampa_bsm_downloads,tampa_spat_downloads,nyc_bsm_downloads,nyc_spat_downloads,nyc_map_downloads))
+    value_range_body = get_monthly(cur, today)
+    conn.commit()
+    cur.close()
+    conn.close()
+     
+    credentials = get_credentials()
+    http = credentials.authorize(httplib2.Http())
+    service = discovery.build('sheets', 'v4', credentials=credentials)
+    #Enter spreadsheet id from Google Sheets object
+    spreadsheet_id = config["spreadsheet_id_s3"]
+    spreadsheetRange = "A2:I" + str(len(value_range_body['values']) + 1)
+    value_input_option = 'USER_ENTERED'
+    request = service.spreadsheets().values().update(spreadsheetId=spreadsheet_id, range=spreadsheetRange, valueInputOption=value_input_option, body=value_range_body)
+    response = request.execute()
+    print(response)
+
+except Exception as e:
+    sendEmail("S3", str(e))

@@ -15,6 +15,8 @@ from oauth2client import client
 from oauth2client import tools
 from oauth2client.file import Storage
 
+from sesemail import sendEmail
+
 try:
     import argparse
     flags = argparse.ArgumentParser(parents=[tools.argparser]).parse_args()
@@ -26,7 +28,6 @@ This code accesses the Socrata API to select dataset downloads, views, API downl
 and API views for ITS JPO datasets on data.transportation.gov, then appends that
 data to a Postgres database and writes monthly numbers to a Google Sheets object
 through the Google Drive API. 
-
 Requires:
 - Postgres database with table dtg_metrics and columns
 dataset_name,views_by_month,monthly_downloads,api_access,api_downloads,downloads,end_date
@@ -40,14 +41,12 @@ Code is currently set up to work with ipdh_metrics.dtg_metrics
 
 SCOPES = 'https://www.googleapis.com/auth/spreadsheets'
 CLIENT_SECRET_FILE = 'client_secret.json'
-APPLICATION_NAME = 'APPLICATION_NAME'
+APPLICATION_NAME = 'its-jpo-metrics'
 
 def get_credentials():
     """Gets valid user credentials from storage.
-
     If nothing has been stored, or if the stored credentials are invalid,
     the OAuth2 flow is completed to obtain the new credentials.
-
     Returns:
         Credentials, the obtained credential.
     """
@@ -75,7 +74,7 @@ def unix_time_millis(dt):
 
 def getAPIMetrics(dataset_id):
     url = "https://data.transportation.gov/api/views/" + dataset_id + "/metrics.json?" + "start=" + str(unix_time_millis(start_date)) + "&end=" + str(unix_time_millis(end_date)) + "&method=series&slice=MONTHLY"
-    r = requests.get(url,auth=HTTPBasicAuth(socrata_config["username"], socrata_config["password"]))
+    r = requests.get(url,auth=HTTPBasicAuth(config["socrata_username"], config["socrata_password"]))
     r = r.json()
     rows_accessed_api = 0
     rows_loaded_api = 0
@@ -88,53 +87,57 @@ def getAPIMetrics(dataset_id):
         pass
     return rows_accessed_api, rows_loaded_api
 
-end_date = datetime.datetime.combine(datetime.date.today(),datetime.time(tzinfo=datetime.timezone(datetime.timedelta(0))))
-start_date = end_date - datetime.timedelta(days=28)
+try:
+    end_date = datetime.datetime.combine(datetime.date.today(),datetime.time(tzinfo=datetime.timezone(datetime.timedelta(0))))
+    start_date = end_date - datetime.timedelta(days=28)
 
-with open("soda.yml", 'r') as stream:
-    socrata_config = yaml.load(stream)
+    with open("config.yml", 'r') as stream:
+        config = yaml.load(stream)
 
-r = requests.get("https://api.us.socrata.com/api/catalog/v1?domains=data.transportation.gov&tags=its+joint+program+office+(jpo)&search_context=data.transportation.gov", auth=HTTPBasicAuth(socrata_config["username"], socrata_config["password"]))
-r = r.json()
+    r = requests.get("https://api.us.socrata.com/api/catalog/v1?domains=data.transportation.gov&tags=its+joint+program+office+(jpo)&search_context=data.transportation.gov", auth=HTTPBasicAuth(config["socrata_username"], config["socrata_password"]))
+    r = r.json()
 
-value_range_body = {'values':[]}
-#Add parameters to connect to specific Postgres database
-conn = psycopg2.connect("")
-cur = conn.cursor()
-cur.execute("SET TIME ZONE 'UTC'")
-for dataset in r['results']:
-    dataset_name = dataset['resource']['name']
-    views_by_month = dataset['resource']['page_views']['page_views_last_month']
-    overall_views = dataset['resource']['page_views']['page_views_total']
-    downloads = dataset['resource']['download_count']
-    if downloads is None:
-        downloads = 0
-    try:    
-        cur.execute("SELECT downloads FROM ipdh_metrics.dtg_metrics WHERE datetime = %s and dataset_name = %s",(start_date,dataset_name))
-        previous_total = cur.fetchone()[0]
-    except:
-        previous_total = 0
-    monthly_downloads = downloads - previous_total
-    api_access, api_downloads = getAPIMetrics(dataset["resource"]["id"])
-    cur.execute("INSERT INTO ipdh_metrics.dtg_metrics VALUES (%s,%s,%s,%s,%s,%s,%s)",(dataset_name,views_by_month,monthly_downloads,api_access,api_downloads,downloads,end_date))
-    value_range_body['values'].append([dataset_name,views_by_month,monthly_downloads,api_access,api_downloads,overall_views,downloads])
-cur.execute("SELECT count(dataset_name) FROM ipdh_metrics.dtg_metrics WHERE datetime = %s",[end_date])
-numdatasets = cur.fetchone()[0]
-cur.execute("SELECT count(dataset_name) FROM ipdh_metrics.dtg_metrics WHERE datetime = %s",[end_date - datetime.timedelta(days=1)])
-prevnumdatasets = cur.fetchone()[0]
-if numdatasets != prevnumdatasets:
-    print("ALERT!! Number of DTG datasets has changed. Previously there were {0} datasets, there are now {1}.\n\n".format(prevnumdatasets,numdatasets))
-conn.commit()
-cur.close()
-conn.close()
+    value_range_body = {'values':[]}
+    #Add parameters to connect to specific Postgres database
+    conn = psycopg2.connect(config["pg_connection_string"])
+    cur = conn.cursor()
+    cur.execute("SET TIME ZONE 'UTC'")
+    for dataset in r['results']:
+        dataset_name = dataset['resource']['name']
+        views_by_month = dataset['resource']['page_views']['page_views_last_month']
+        overall_views = dataset['resource']['page_views']['page_views_total']
+        downloads = dataset['resource']['download_count']
+        if downloads is None:
+            downloads = 0
+        try:    
+            cur.execute("SELECT downloads FROM ipdh_metrics.dtg_metrics WHERE datetime = %s and dataset_name = %s",(start_date,dataset_name))
+            previous_total = cur.fetchone()[0]
+        except:
+            previous_total = 0
+        monthly_downloads = downloads - previous_total
+        api_access, api_downloads = getAPIMetrics(dataset["resource"]["id"])
+        cur.execute("INSERT INTO ipdh_metrics.dtg_metrics VALUES (%s,%s,%s,%s,%s,%s,%s)",(dataset_name,views_by_month,monthly_downloads,api_access,api_downloads,downloads,end_date))
+        value_range_body['values'].append([dataset_name,views_by_month,monthly_downloads,api_access,api_downloads,overall_views,downloads])
+    cur.execute("SELECT count(dataset_name) FROM ipdh_metrics.dtg_metrics WHERE datetime = %s",[end_date])
+    numdatasets = cur.fetchone()[0]
+    cur.execute("SELECT count(dataset_name) FROM ipdh_metrics.dtg_metrics WHERE datetime = %s",[end_date - datetime.timedelta(days=1)])
+    prevnumdatasets = cur.fetchone()[0]
+    if numdatasets != prevnumdatasets:
+        print("ALERT!! Number of DTG datasets has changed. Previously there were {0} datasets, there are now {1}.\n\n".format(prevnumdatasets,numdatasets))
+    conn.commit()
+    cur.close()
+    conn.close()
 
-credentials = get_credentials()
-http = credentials.authorize(httplib2.Http())
-service = discovery.build('sheets', 'v4', credentials=credentials)
-#Enter spreadsheet id from Google Sheets object
-spreadsheet_id = ""
-spreadsheetRange = "A2:E" + str(len(r['results']) + 1)
-value_input_option = 'USER_ENTERED'
-request = service.spreadsheets().values().update(spreadsheetId=spreadsheet_id, range=spreadsheetRange, valueInputOption=value_input_option, body=value_range_body)
-response = request.execute()
-print(response)
+    credentials = get_credentials()
+    http = credentials.authorize(httplib2.Http())
+    service = discovery.build('sheets', 'v4', credentials=credentials)
+    #Enter spreadsheet id from Google Sheets object
+    spreadsheet_id = config["spreadsheet_id_dtg"]
+    spreadsheetRange = "A2:G" + str(len(r['results']) + 1)
+    value_input_option = 'USER_ENTERED'
+    request = service.spreadsheets().values().update(spreadsheetId=spreadsheet_id, range=spreadsheetRange, valueInputOption=value_input_option, body=value_range_body)
+    response = request.execute()
+    print(response)
+
+except Exception as e:
+    sendEmail("DTG", str(e) )
