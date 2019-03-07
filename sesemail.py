@@ -3,7 +3,6 @@ import yaml
 from botocore.exceptions import ClientError
 
 def sendEmail(scriptName, e):
-   
 
     try:
          with open("config.yml", 'r') as stream:
@@ -11,7 +10,7 @@ def sendEmail(scriptName, e):
 
         BODY_TEXT = (e)
         client = boto3.client('ses',region_name=config["aws_ses_region"])
-        
+
         response = client.send_email(
             Destination={
                 'ToAddresses': [
