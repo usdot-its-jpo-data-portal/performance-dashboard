@@ -5,7 +5,7 @@ from botocore.exceptions import ClientError
 def sendEmail(scriptName, e):
 
     try:
-         with open("config.yml", 'r') as stream:
+        with open("config.yml", 'r') as stream:
             config = yaml.load(stream)
 
         BODY_TEXT = (e)
