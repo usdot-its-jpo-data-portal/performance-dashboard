@@ -1,5 +1,5 @@
 import time
-import datetime
+from datetime import datetime
 import requests
 from requests.auth import HTTPBasicAuth
 requests.packages.urllib3.disable_warnings()
@@ -115,6 +115,8 @@ try:
         except:
             previous_total = 0
         monthly_downloads = downloads - previous_total
+        if monthly_downloads < 0:
+            monthly_downloads = 0
         api_access, api_downloads = getAPIMetrics(dataset["resource"]["id"])
         cur.execute("INSERT INTO ipdh_metrics.dtg_metrics VALUES (%s,%s,%s,%s,%s,%s,%s)",(dataset_name,views_by_month,monthly_downloads,api_access,api_downloads,downloads,end_date))
         value_range_body['values'].append([dataset_name,views_by_month,monthly_downloads,api_access,api_downloads,overall_views,downloads])
