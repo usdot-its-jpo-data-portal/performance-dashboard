@@ -19,6 +19,7 @@ wydot_bsm_downloads = 0
 wydot_tim_downloads = 0
 tampa_bsm_downloads = 0
 tampa_spat_downloads = 0
+tampa_tim_downloads = 0
 nyc_bsm_downloads = 0
 nyc_spat_downloads = 0
 nyc_map_downloads = 0
@@ -85,7 +86,7 @@ def process_lines(log):
     Reads each line in log file. Looks for keyword REST.GET.OBJECT that indicates a file was downloaded by a user. Checks which file was
     downloaded/accessed by the user and adds to the appropriate count.
     '''
-    global pageviews,wydot_bsm_downloads,wydot_tim_downloads,tampa_bsm_downloads,tampa_spat_downloads,nyc_bsm_downloads,nyc_spat_downloads,nyc_map_downloads
+    global pageviews,wydot_bsm_downloads,wydot_tim_downloads,tampa_bsm_downloads,tampa_spat_downloads,tampa_tim_downloads,nyc_bsm_downloads,nyc_spat_downloads,nyc_map_downloads
     for line in log:
         if " REST.GET.OBJECT " in line:
             row = line.split(" ")
@@ -97,11 +98,13 @@ def process_lines(log):
                     wydot_bsm_downloads += 1
                 else:
                     wydot_tim_downloads += 1
-            elif "tampa" in item:
+            elif "thea" in item:
                 if "BSM" in item:
                     tampa_bsm_downloads += 1
-                else:
+                elif "SPAT" in item:
                     tampa_spat_downloads += 1
+                else:
+                    tampa_tim_downloads += 1
             elif "nyc" in item:
                 if "BSM" in item:
                     nyc_bsm_downloads += 1
@@ -115,7 +118,7 @@ def get_monthly(cur, today):
     Queries database to get past month of data to write to Google Sheets for dashboard to access
     '''
     last_month = today - datetime.timedelta(days=29)
-    cur.execute("SELECT datetime,pageviews,wydot_bsm_downloads,wydot_tim_downloads,tampa_bsm_downloads,tampa_spat_downloads,nyc_bsm_downloads,nyc_spat_downloads,nyc_map_downloads FROM ipdh_metrics.sandbox_metrics WHERE datetime >= %s",[last_month])
+    cur.execute("SELECT datetime,pageviews,wydot_bsm_downloads,wydot_tim_downloads,tampa_bsm_downloads,tampa_spat_downloads,nyc_bsm_downloads,nyc_spat_downloads,nyc_map_downloads,tampa_tim_downloads FROM ipdh_metrics.sandbox_metrics WHERE datetime >= %s ORDER BY datetime",[last_month])
     results = cur.fetchall()
     value_range_body = {'values':[]}
     for record in results:
@@ -126,6 +129,7 @@ def get_monthly(cur, today):
         row.append(record[3])
         row.append(record[4])
         row.append(record[5])
+        row.append(record[9])
         row.append(record[6])
         row.append(record[7])
         row.append(record[8])
@@ -153,7 +157,7 @@ try:
     conn = psycopg2.connect(config["pg_connection_string"])
     cur = conn.cursor()
     cur.execute("SET TIME ZONE 'UTC'")
-    cur.execute("INSERT INTO ipdh_metrics.sandbox_metrics (datetime,pageviews,wydot_bsm_downloads,wydot_tim_downloads,tampa_bsm_downloads,tampa_spat_downloads,nyc_bsm_downloads,nyc_spat_downloads,nyc_map_downloads) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",(today,pageviews,wydot_bsm_downloads,wydot_tim_downloads,tampa_bsm_downloads,tampa_spat_downloads,nyc_bsm_downloads,nyc_spat_downloads,nyc_map_downloads))
+    cur.execute("INSERT INTO ipdh_metrics.sandbox_metrics (datetime,pageviews,wydot_bsm_downloads,wydot_tim_downloads,tampa_bsm_downloads,tampa_spat_downloads,tampa_tim_downloads,nyc_bsm_downloads,nyc_spat_downloads,nyc_map_downloads) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",(today,pageviews,wydot_bsm_downloads,wydot_tim_downloads,tampa_bsm_downloads,tampa_spat_downloads,tampa_tim_downloads,nyc_bsm_downloads,nyc_spat_downloads,nyc_map_downloads))
     value_range_body = get_monthly(cur, today)
     conn.commit()
     cur.close()
@@ -164,7 +168,7 @@ try:
     service = discovery.build('sheets', 'v4', credentials=credentials)
     #Enter spreadsheet id from Google Sheets object
     spreadsheet_id = config["spreadsheet_id_s3"]
-    spreadsheetRange = "A2:I" + str(len(value_range_body['values']) + 1)
+    spreadsheetRange = "A2:J" + str(len(value_range_body['values']) + 1)
     value_input_option = 'USER_ENTERED'
     request = service.spreadsheets().values().update(spreadsheetId=spreadsheet_id, range=spreadsheetRange, valueInputOption=value_input_option, body=value_range_body)
     response = request.execute()

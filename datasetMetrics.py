@@ -1,9 +1,9 @@
 import time
-from datetime import datetime
+import datetime
 import requests
 from requests.auth import HTTPBasicAuth
-requests.packages.urllib3.disable_warnings()
-from sodapy import Socrata
+# requests.packages.urllib3.disable_warnings()
+# from sodapy import Socrata
 import yaml
 import psycopg2
 import httplib2
